@@ -3,7 +3,12 @@ extends Node
 #internal variables
 var file
 var ID3pos
+var synchbytes
 var Tagsize
+
+var MoreTags = true
+
+var SongInfo = {}
 
 func OpenFile(filepath):
 	file = FileAccess.open(filepath,FileAccess.READ)
@@ -26,25 +31,30 @@ func OpenFile(filepath):
 	print(file.get_buffer(2).hex_encode())
 	#After that is the flag byte
 	print(file.get_buffer(1).hex_encode())
-	#Then the size information. This doesn't actually fetch the right size,
-	#Because it's a synchsafe integer that only people who haven't touched
-	#grass in 20 years seem to be able to explain in understandable English
-	Tagsize = file.get_buffer(4).hex_encode()
-	print(Tagsize)
-	ID3pos = file.get_position()
+	#Then the size information. We have to do some funny business here, cause 
+	#this is a synchsafe integer
+	synchbytes = file.get_32()
+	print(synchbytes)
+	Synchsafeconversion()
+	while MoreTags:
+		TagLoad()
 
-func TagSearch(tag):
-	var tagashex = tag.to_utf8_buffer().hex_encode()
-	print(tagashex)
-	var tagbytes = file.get_buffer(Tagsize)
-	file.seek(ID3pos)
-	file.seek(tagbytes.hex_encode().find(tagashex))
-	print(file.get_position())
-	print(file.get_buffer(4).get_string_from_utf8())
+var converted = 0
+var magic = 0x7F000000
+#Max return from this should be 4095
+func Synchsafeconversion():
+	for byte in range(4):
+		converted >>= 1
+		converted |= synchbytes & magic
+		magic >>= 8
+	Tagsize = converted
 
 func TagLoad():
 	#Now we start actually loading tags
-	print(file.get_buffer(4).get_string_from_utf8())
+	var tag = file.get_buffer(4).get_string_from_utf8()
+	if tag == "":
+		MoreTags = false
+		return
 	#These next 4 bytes have the information about the tag's size
 	var size = file.get_buffer(4).hex_encode().hex_to_int()
 	#These next two are flags
@@ -55,4 +65,5 @@ func TagLoad():
 		input.append(file.get_buffer(1).get_string_from_utf8())
 		bytes = bytes+1
 	var output: String
-	print(output.join(input))
+	SongInfo[tag] = output.join(input)
+	Tagsize = Tagsize-size
